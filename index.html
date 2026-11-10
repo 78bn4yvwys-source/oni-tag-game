@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>1 VS 4 鬼ごっこ - Prototype</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;touch-action:none}
+#game{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;inset:0;pointer-events:none;color:white}
+.top{position:absolute;top:env(safe-area-inset-top,10px);left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.panel{background:#101827cc;border:1px solid #ffffff22;border-radius:12px;padding:8px 11px;backdrop-filter:blur(6px);font-size:12px}
+#status{font-weight:700;letter-spacing:.04em}
+#staminaWrap{width:min(42vw,170px);margin-top:5px;height:9px;background:#ffffff2a;border-radius:9px;overflow:hidden}
+#stamina{height:100%;width:100%;background:#5ee6a8;border-radius:9px;transition:background .15s}
+#message{position:absolute;left:50%;top:43%;transform:translate(-50%,-50%);text-align:center;font-weight:800;font-size:clamp(24px,7vw,38px);text-shadow:0 3px 12px #000;white-space:pre-line}
+#hint{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 62px);transform:translateX(-50%);font-size:11px;color:#e2e8f0;background:#10182799;padding:6px 10px;border-radius:20px;white-space:nowrap}
+#controls{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);height:150px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 18px;pointer-events:none}
+#stickArea{width:132px;height:132px;position:relative;pointer-events:auto;touch-action:none}
+#stickBase{position:absolute;inset:10px;border-radius:50%;background:#dbeafe22;border:1px solid #ffffff55}
+#stick{position:absolute;width:48px;height:48px;left:42px;top:42px;border-radius:50%;background:#dbeafeaa;border:2px solid #fff;box-shadow:0 3px 12px #0006}
+#dash{pointer-events:auto;width:82px;height:82px;border-radius:50%;border:2px solid #ffffffaa;background:#16a34acc;color:#fff;font-weight:900;font-size:14px;box-shadow:0 4px 16px #0006;touch-action:none}
+#dash.active{background:#22c55e}
+#centerDot{position:absolute;left:50%;top:50%;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 4px #000;transform:translate(-50%,-50%);opacity:.85}
+#overlay{position:absolute;inset:0;background:#07101bd9;display:flex;align-items:center;justify-content:center;padding:24px;color:#fff}
+#card{width:min(100%,390px);background:#172438;border:1px solid #ffffff24;border-radius:22px;padding:24px;box-shadow:0 20px 60px #0008}
+h1{font-size:26px;margin:0 0 8px}
+p{color:#cbd5e1;line-height:1.55;font-size:14px}
+#start{width:100%;padding:15px;border:0;border-radius:13px;background:#38bdf8;color:#082032;font-size:16px;font-weight:900;margin-top:12px}
+.small{font-size:11px;color:#94a3b8}
+#restart{display:none;position:absolute;left:50%;top:57%;transform:translateX(-50%);pointer-events:auto;padding:13px 22px;border:0;border-radius:12px;background:#38bdf8;color:#082032;font-weight:900;font-size:15px}
+@media (orientation:landscape){#hint:after{content:" / 縦画面推奨"}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div class="top">
+    <div class="panel"><div id="status">逃走中　鬼：4体</div><div id="staminaWrap"><div id="stamina"></div></div><div class="small" style="margin-top:4px">STAMINA</div></div>
+    <div class="panel" id="timer">00:00</div>
+  </div>
+  <div id="hint">左スティック：移動　画面を左右スワイプ：視点変更</div>
+  <div id="centerDot"></div>
+  <div id="message"></div>
+  <button id="restart">もう一度プレイ</button>
+  <div id="controls">
+    <div id="stickArea"><div id="stickBase"></div><div id="stick"></div></div>
+    <button id="dash">DASH</button>
+  </div>
+</div>
+<div id="overlay">
+  <div id="card">
+    <h1>1 VS 4 鬼ごっこ</h1>
+    <p>4体の鬼から逃げ切ろう。鬼に触れたらゲームオーバー！</p>
+    <p><b>移動：</b>左下のスティック<br><b>視点：</b>ゲーム画面を左右にスワイプ<br><b>ダッシュ：</b>右下のボタン（スタミナ消費）</p>
+    <p class="small">試作版：広いフィールド／障害物／鬼4体の追跡AI。画面は縦向き推奨。</p>
+    <button id="start">ゲーム開始</button>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(() => {
+const root=document.getElementById('game');
+const overlay=document.getElementById('overlay'), startBtn=document.getElementById('start');
+const message=document.getElementById('message'), restart=document.getElementById('restart');
+const staminaBar=document.getElementById('stamina'), timerEl=document.getElementById('timer'), statusEl=document.getElementById('status');
+if(!window.THREE){message.textContent='3Dライブラリを読み込めません';return;}
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x9bc5d8); scene.fog=new THREE.Fog(0x9bc5d8,35,105);
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.1,180);
+camera.position.set(0,1.65,0);
+const renderer=new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.7)); renderer.setSize(innerWidth,innerHeight); renderer.shadowMap.enabled=false;
+renderer.outputColorSpace=THREE.SRGBColorSpace; root.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x526477,2.0));
+const sun=new THREE.DirectionalLight(0xffffff,1.35); sun.position.set(-18,30,14); scene.add(sun);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(150,150),new THREE.MeshStandardMaterial({color:0x718d68,roughness:1}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-.06; scene.add(ground);
+const grid=new THREE.GridHelper(150,60,0x78936f,0x829a78); grid.position.y=-.045; scene.add(grid);
+const matBox=new THREE.MeshStandardMaterial({color:0x8b735c,roughness:1});
+const matTop=new THREE.MeshStandardMaterial({color:0x66836a,roughness:1});
+const obstacles=[];
+function addObstacle(x,z,w,d,h=2.2){
+ const g=new THREE.Group();
+ const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),matBox);body.position.y=h/2;g.add(body);
+ const cap=new THREE.Mesh(new THREE.BoxGeometry(w+.12,.18,d+.12),matTop);cap.position.y=h+.08;g.add(cap);
+ g.position.set(x,0,z);scene.add(g);obstacles.push({x,z,hw:w/2,hd:d/2}); 
+}
+[
+[-10,-10,4,3],[-3,-15,3,6],[7,-11,5,3],[14,-3,3,7],
+[-13,3,3,8],[-5,4,6,3],[4,2,3,7],[11,10,7,3],
+[-8,14,6,3],[1,17,3,6],[-17,-19,5,3],[18,19,4,5],
+[20,-17,5,3],[-20,18,4,4],[0,-27,9,2]
+].forEach(a=>addObstacle(...a));
+const boundaryMat=new THREE.MeshStandardMaterial({color:0x526477});
+function wall(x,z,w,d){const m=new THREE.Mesh(new THREE.BoxGeometry(w,3,d),boundaryMat);m.position.set(x,1.5,z);scene.add(m);}
+wall(0,-53,110,1);wall(0,53,110,1);wall(-53,0,1,106);wall(53,0,1,106);
+const player={x:0,z:0,yaw:0,stamina:100};
+const enemies=[];
+const enemyMat=new THREE.MeshStandardMaterial({color:0xe34f55,roughness:.8});
+const enemyTop=new THREE.MeshStandardMaterial({color:0xffa0a0});
+function makeEnemy(x,z){
+ const group=new THREE.Group();
+ const body=new THREE.Mesh(new THREE.BoxGeometry(.85,1.25,.85),enemyMat);body.position.y=.68;group.add(body);
+ const nose=new THREE.Mesh(new THREE.BoxGeometry(.26,.18,.18),enemyTop);nose.position.set(0,1.18,-.48);group.add(nose);
+ const ring=new THREE.Mesh(new THREE.RingGeometry(.57,.68,24),new THREE.MeshBasicMaterial({color:0xff7777,side:THREE.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.015;group.add(ring);
+ group.position.set(x,0,z);scene.add(group);enemies.push({group,x,z,yaw:Math.random()*Math.PI*2,speed:2.15});
+}
+[[-17,-12],[16,-15],[-16,17],[17,15]].forEach(p=>makeEnemy(...p));
+const clock=new THREE.Clock();
+let running=false,ended=false,elapsed=0,dashHeld=false;
+let joy={x:0,y:0},joyPointer=null,lookPointer=null,lastLookX=0;
+const stickArea=document.getElementById('stickArea'),stick=document.getElementById('stick'),dash=document.getElementById('dash');
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function collides(x,z,r=.48){
+ if(Math.abs(x)>51-r||Math.abs(z)>51-r)return true;
+ for(const o of obstacles) if(Math.abs(x-o.x)<o.hw+r && Math.abs(z-o.z)<o.hd+r)return true;
+ return false;
+}
+function moveWithCollision(obj,dx,dz,r){
+ let nx=obj.x+dx,nz=obj.z;
+ if(!collides(nx,nz,r))obj.x=nx;
+ nx=obj.x;nz=obj.z+dz;
+ if(!collides(nx,nz,r))obj.z=nz;
+}
+function reset(){
+ player.x=0;player.z=0;player.yaw=0;player.stamina=100;elapsed=0;ended=false;running=true;
+ const positions=[[-17,-12],[16,-15],[-16,17],[17,15]];
+ enemies.forEach((e,i)=>{e.x=positions[i][0];e.z=positions[i][1];e.group.position.set(e.x,0,e.z);});
+ message.textContent='';restart.style.display='none';overlay.style.display='none';clock.getDelta();
+}
+function finish(){ended=true;running=false;message.textContent='GAME OVER';restart.style.display='block';}
+function update(dt){
+ if(!running)return;
+ elapsed+=dt;timerEl.textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
+ const moving=Math.hypot(joy.x,joy.y)>.08;
+ const wantsDash=dashHeld&&moving&&player.stamina>0;
+ const pSpeed=wantsDash?4.35:1.35;
+ if(wantsDash)player.stamina=Math.max(0,player.stamina-34*dt);
+ else player.stamina=Math.min(100,player.stamina+19*dt);
+ staminaBar.style.width=player.stamina+'%';staminaBar.style.background=player.stamina<25?'#fb7185':'#5ee6a8';
+ // Joystick up is forward; strafe is relative to view direction.
+ const forwardX=-Math.sin(player.yaw),forwardZ=-Math.cos(player.yaw);
+ const rightX=Math.cos(player.yaw),rightZ=-Math.sin(player.yaw);
+ const dx=(forwardX*(-joy.y)+rightX*joy.x)*pSpeed*dt;
+ const dz=(forwardZ*(-joy.y)+rightZ*joy.x)*pSpeed*dt;
+ moveWithCollision(player,dx,dz,.42);
+ enemies.forEach(e=>{
+   const vx=player.x-e.x,vz=player.z-e.z,dist=Math.hypot(vx,vz)||1;
+   const desired=Math.atan2(-vx,-vz);
+   let diff=Math.atan2(Math.sin(desired-e.yaw),Math.cos(desired-e.yaw));
+   e.yaw+=clamp(diff,-2.8*dt,2.8*dt);
+   const speed=2.15;
+   const ex=(vx/dist)*speed*dt,ez=(vz/dist)*speed*dt;
+   const oldX=e.x,oldZ=e.z;
+   moveWithCollision(e,ex,ez,.48);
+   if(Math.abs(e.x-oldX)+Math.abs(e.z-oldZ)<.0001){
+     // Simple obstacle sidestep to avoid getting stuck.
+     const side=e.yaw+(Math.random()>.5?1:-1)*Math.PI/2;
+     moveWithCollision(e,Math.sin(side)*speed*.75*dt,Math.cos(side)*speed*.75*dt,.48);
+   }
+   e.group.position.set(e.x,0,e.z);e.group.rotation.y=e.yaw;
+   if(Math.hypot(player.x-e.x,player.z-e.z)<.88)finish();
+ });
+ camera.position.set(player.x,1.62,player.z);
+ camera.rotation.order='YXZ';camera.rotation.y=player.yaw;
+}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05);update(dt);renderer.render(scene,camera);}
+animate();
+function setJoy(e){
+ const r=stickArea.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+ const dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=43,k=len>max?max/len:1;
+ joy.x=clamp(dx*k/max,-1,1);joy.y=clamp(dy*k/max,-1,1);
+ stick.style.transform=`translate(${dx*k}px,${dy*k}px)`;
+}
+stickArea.addEventListener('pointerdown',e=>{if(!running)return;joyPointer=e.pointerId;stickArea.setPointerCapture(e.pointerId);setJoy(e);});
+stickArea.addEventListener('pointermove',e=>{if(e.pointerId===joyPointer)setJoy(e);});
+function releaseJoy(e){if(e.pointerId===joyPointer){joyPointer=null;joy={x:0,y:0};stick.style.transform='translate(0,0)';}}
+stickArea.addEventListener('pointerup',releaseJoy);stickArea.addEventListener('pointercancel',releaseJoy);
+dash.addEventListener('pointerdown',e=>{if(running){dashHeld=true;dash.classList.add('active');e.preventDefault();}});
+['pointerup','pointercancel','lostpointercapture'].forEach(ev=>dash.addEventListener(ev,()=>{dashHeld=false;dash.classList.remove('active');}));
+renderer.domElement.addEventListener('pointerdown',e=>{if(!running||e.clientX<innerWidth*.22&&e.clientY>innerHeight*.65)return;lookPointer=e.pointerId;lastLookX=e.clientX;renderer.domElement.setPointerCapture(e.pointerId);});
+renderer.domElement.addEventListener('pointermove',e=>{if(e.pointerId===lookPointer){const dx=e.clientX-lastLookX;lastLookX=e.clientX;player.yaw-=dx*.006; }});
+function releaseLook(e){if(e.pointerId===lookPointer)lookPointer=null;}
+renderer.domElement.addEventListener('pointerup',releaseLook);renderer.domElement.addEventListener('pointercancel',releaseLook);
+startBtn.addEventListener('click',reset);restart.addEventListener('click',reset);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+})();
+</script>
+</body>
+</html>
