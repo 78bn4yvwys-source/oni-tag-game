@@ -111,7 +111,7 @@ function makeEnemy(x,z){
 }
 [[-17,-12],[16,-15],[-16,17],[17,15]].forEach(p=>makeEnemy(...p));
 const clock=new THREE.Clock();
-let running=false,ended=false,elapsed=0,dashHeld=false;
+let running=false,ended=false,elapsed=0,dashHeld=false,regenWait=0;
 let joy={x:0,y:0},joyPointer=null,lookPointer=null,lastLookX=0;
 const stickArea=document.getElementById('stickArea'),stick=document.getElementById('stick'),dash=document.getElementById('dash');
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
@@ -127,7 +127,7 @@ function moveWithCollision(obj,dx,dz,r){
  if(!collides(nx,nz,r))obj.z=nz;
 }
 function reset(){
- player.x=0;player.z=0;player.yaw=0;player.stamina=100;elapsed=0;ended=false;running=true;
+ player.x=0;player.z=0;player.yaw=0;player.stamina=100;regenWait=0;elapsed=0;ended=false;running=true;
  const positions=[[-17,-12],[16,-15],[-16,17],[17,15]];
  enemies.forEach((e,i)=>{e.x=positions[i][0];e.z=positions[i][1];e.group.position.set(e.x,0,e.z);});
  message.textContent='';restart.style.display='none';overlay.style.display='none';clock.getDelta();
@@ -139,8 +139,14 @@ function update(dt){
  const moving=Math.hypot(joy.x,joy.y)>.08;
  const wantsDash=dashHeld&&moving&&player.stamina>0;
  const pSpeed=wantsDash?4.35:1.35;
- if(wantsDash)player.stamina=Math.max(0,player.stamina-34*dt);
- else player.stamina=Math.min(100,player.stamina+19*dt);
+ if(wantsDash){
+   player.stamina=Math.max(0,player.stamina-36*dt);
+   regenWait=1.5; // ダッシュ終了後、1.5秒は回復しない
+ } else if(regenWait>0){
+   regenWait=Math.max(0,regenWait-dt);
+ } else {
+   player.stamina=Math.min(100,player.stamina+12*dt);
+ }
  staminaBar.style.width=player.stamina+'%';staminaBar.style.background=player.stamina<25?'#fb7185':'#5ee6a8';
  // Joystick up is forward; strafe is relative to view direction.
  const forwardX=-Math.sin(player.yaw),forwardZ=-Math.cos(player.yaw);
